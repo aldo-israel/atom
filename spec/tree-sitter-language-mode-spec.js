@@ -19,6 +19,7 @@ describe('TreeSitterLanguageMode', () => {
   beforeEach(async () => {
     editor = await atom.workspace.open('')
     buffer = editor.getBuffer()
+    editor.displayLayer.reset({foldCharacter: '…'})
   })
 
   describe('highlighting', () => {
@@ -269,6 +270,45 @@ describe('TreeSitterLanguageMode', () => {
         [
           {text: '`', scopes: ['string']},
           {text: ';', scopes: []}
+        ]
+      ])
+    })
+
+    it('handles folds inside of highlighted tokens', async () => {
+      const grammar = new TreeSitterGrammar(atom.grammars, jsGrammarPath, {
+        parser: 'tree-sitter-javascript',
+        scopes: {
+          'comment': 'comment',
+          'call_expression > identifier': 'function',
+        }
+      })
+
+      buffer.setText(dedent `
+        /*
+         * Hello
+         */
+
+        hello();
+      `)
+
+      const languageMode = new TreeSitterLanguageMode({buffer, grammar})
+      buffer.setLanguageMode(languageMode)
+      await nextHighlightingUpdate(languageMode)
+
+      editor.foldBufferRange([[0, 2], [2, 0]])
+
+      expectTokensToEqual(editor, [
+        [
+          {text: '/*', scopes: ['comment']},
+          {text: '…', scopes: ['fold-marker']},
+          {text: ' */', scopes: ['comment']}
+        ],
+        [
+          {text: '', scopes: []}
+        ],
+        [
+          {text: 'hello', scopes: ['function']},
+          {text: '();', scopes: []},
         ]
       ])
     })
@@ -597,10 +637,6 @@ describe('TreeSitterLanguageMode', () => {
   })
 
   describe('folding', () => {
-    beforeEach(() => {
-      editor.displayLayer.reset({foldCharacter: '…'})
-    })
-
     it('can fold nodes that start and end with specified tokens', async () => {
       const grammar = new TreeSitterGrammar(atom.grammars, jsGrammarPath, {
         parser: 'tree-sitter-javascript',
@@ -1179,7 +1215,7 @@ function expectTokensToEqual (editor, expectedTokenLines) {
         text,
         scopes: scopes.map(scope => scope
           .split(' ')
-          .map(className => className.slice('syntax--'.length))
+          .map(className => className.replace('syntax--', ''))
           .join(' '))
       }))
     }
